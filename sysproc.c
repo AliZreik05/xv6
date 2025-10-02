@@ -7,6 +7,23 @@
 #include "mmu.h"
 #include "proc.h"
 
+int sys_getsysteminfo(void)
+{
+char *ubuf;
+int info[3];
+
+if(argptr(0,&ubuf,sizeof(info)) < 0)
+{
+return -1;
+}
+info[0] = numberOfProcesses();
+info[1] = FreeMemory();
+info[2] = Uptime();
+
+memmove(ubuf,info,sizeof(info));
+return 0;
+}
+
 int
 sys_fork(void)
 {
@@ -88,4 +105,15 @@ sys_uptime(void)
   xticks = ticks;
   release(&tickslock);
   return xticks;
+}
+extern uint ticks;
+extern struct spinlock ticklock;
+
+int Uptime(void)
+{
+uint ticksnb;
+acquire(&tickslock);
+ticksnb = ticks;
+release(&tickslock);
+return (int)ticksnb;
 }

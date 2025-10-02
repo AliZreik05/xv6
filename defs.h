@@ -155,7 +155,10 @@ int             argstr(int, char**);
 int             fetchint(uint, int*);
 int             fetchstr(uint, char**);
 void            syscall(void);
-
+int  sys_getsysteminfo(void);
+int numberOfProcesses(void);
+int FreeMemory(void);
+int Uptime(void);
 // timer.c
 void            timerinit(void);
 

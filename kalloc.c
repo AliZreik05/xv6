@@ -94,3 +94,16 @@ kalloc(void)
   return (char*)r;
 }
 
+int FreeMemory(void)
+{
+struct run *r;
+int freepages = 0;
+
+acquire(&kmem.lock);
+for(r=kmem.freelist;r;r = r->next)
+{
+freepages++;
+}
+release(&kmem.lock);
+return freepages * PGSIZE;
+}
