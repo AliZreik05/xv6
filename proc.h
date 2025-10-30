@@ -10,6 +10,10 @@ struct cpu {
   struct proc *proc;           // The process running on this cpu or null
 };
 
+int clone(void(*fn)(void*),void *arg, void *stack);
+int join(void **stack);
+void threadexit(void);
+
 extern struct cpu cpus[NCPU];
 extern int ncpu;
 
@@ -49,6 +53,13 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+int isathread;
+int threadgroupleaderid;
+struct proc* leader;
+void *userstack;
+int nbofactivethreads;
+int szpriv;
+int *szp;
 };
 
 // Process memory is laid out contiguously, low addresses first:

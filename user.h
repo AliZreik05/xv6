@@ -24,6 +24,9 @@ char* sbrk(int);
 int sleep(int);
 int uptime(void);
 int getsysteminfo(int *info);
+int clone(void (*fn)(void*), void *arg, void *stack);
+int join(void **stack);
+void threadexit(void);
 // ulib.c
 int stat(const char*, struct stat*);
 char* strcpy(char*, const char*);

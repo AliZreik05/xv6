@@ -6,6 +6,11 @@
 #include "x86.h"
 #include "proc.h"
 #include "spinlock.h"
+#include "sleeplock.h"
+#include "fs.h"
+#include "file.h"
+#include "fcntl.h"
+#include "traps.h"
 
 struct {
   struct spinlock lock;
@@ -112,7 +117,122 @@ found:
   memset(p->context, 0, sizeof *p->context);
   p->context->eip = (uint)forkret;
 
+p->isathread=0;
+p->threadgroupleaderid = p->pid;
+p->leader=p;
+p->userstack=0;
+p->nbofactivethreads=1;
+p->szpriv=0;
+p->szp = &p->szpriv;
+
   return p;
+}
+
+
+int clone(void (*fn)(void*),void *arg, void *stack)
+{
+struct proc *p =myproc();
+if(((uint)stack % PGSIZE) != 0)
+{
+return -1;
+}
+struct proc *np = allocproc();
+if(np == 0)
+{
+return -1;
+}
+np->pgdir = p->pgdir;
+np->szp = (p->leader ? p->leader:p)->szp;
+np->sz = *np->szp;
+
+*np->tf = *p->tf;
+np->tf->eax = 0;
+
+uint sp = (uint)stack + PGSIZE;
+sp -= 4;*(uint*)sp=(uint)arg;
+sp-=4; *(uint*)sp=0;
+
+np->tf->esp=sp;
+np->tf->eip = (uint)fn;
+
+for(int i =0 ; i <NOFILE;i++)
+{
+if(p->ofile[i])
+{
+np->ofile[i]=filedup(p->ofile[i]);
+}
+}
+np->cwd = idup(p->cwd);
+safestrcpy(np->name,p->name, sizeof(np->name));
+
+np->isathread = 1;
+np->leader = p->leader ? p->leader: p;
+np->threadgroupleaderid = np->leader->pid;
+np->userstack = stack;
+
+np->parent = np->leader;
+
+acquire(&ptable.lock);
+np->leader->nbofactivethreads++;
+np->state = RUNNABLE;
+release(&ptable.lock);
+return np->pid;
+}
+
+void threadexit(void)
+{
+struct proc *p = myproc();
+
+acquire(&ptable.lock);
+wakeup1(p->parent);
+p->state = ZOMBIE;
+
+p->leader->nbofactivethreads--;
+
+sched();
+panic("threadexit: returned");
+}
+
+int join(void **userstack_out)
+{
+  struct proc *p = myproc();
+  if (p != p->leader)
+    return -1;
+
+  acquire(&ptable.lock);
+  for (;;) {
+    int havekids = 0;
+
+    for (struct proc *pp = ptable.proc; pp < &ptable.proc[NPROC]; pp++) {
+      if (pp->parent != p)
+        continue;
+      if (!(pp->isathread && pp->threadgroupleaderid == p->pid))
+        continue;
+
+      havekids = 1;
+
+      if (pp->state == ZOMBIE) {
+        if (userstack_out)
+          *userstack_out = pp->userstack;
+
+        kfree(pp->kstack);
+        pp->kstack = 0;
+
+        int tid = pp->pid;     // save before reusing slot
+        pp->state = UNUSED;
+
+        release(&ptable.lock);
+        return tid;
+      }
+    }
+
+    if (!havekids) {
+      release(&ptable.lock);
+      return -1;
+    }
+
+    sleep(p, &ptable.lock);
+  }
 }
 
 //PAGEBREAK: 32
@@ -130,6 +250,11 @@ userinit(void)
     panic("userinit: out of memory?");
   inituvm(p->pgdir, _binary_initcode_start, (int)_binary_initcode_size);
   p->sz = PGSIZE;
+p->szpriv = p->sz;
+p->szp = &p->szpriv;
+p->leader = p;
+p->threadgroupleaderid = p->pid;
+p->isathread=0;
   memset(p->tf, 0, sizeof(*p->tf));
   p->tf->cs = (SEG_UCODE << 3) | DPL_USER;
   p->tf->ds = (SEG_UDATA << 3) | DPL_USER;
@@ -170,6 +295,7 @@ growproc(int n)
       return -1;
   }
   curproc->sz = sz;
+*curproc->szp = sz;
   switchuvm(curproc);
   return 0;
 }
@@ -198,6 +324,9 @@ fork(void)
   }
   np->sz = curproc->sz;
   np->parent = curproc;
+np->leader=np;
+np->threadgroupleaderid = np->pid;
+np->isathread =0;
   *np->tf = *curproc->tf;
 
   // Clear %eax so that fork returns 0 in the child.
@@ -284,6 +413,10 @@ wait(void)
       if(p->parent != curproc)
         continue;
       havekids = 1;
+if(p->isathread)
+{
+continue;
+}
       if(p->state == ZOMBIE){
         // Found one.
         pid = p->pid;

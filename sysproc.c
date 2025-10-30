@@ -7,6 +7,32 @@
 #include "mmu.h"
 #include "proc.h"
 
+int
+sys_clone(void)
+{
+  int f,a,s;
+  if(argint(0,&f) < 0) return -1;
+  if(argint(1,&a) < 0) return -1;
+  if(argint(2,&s) < 0) return -1;
+  return clone((void(*)(void*))f, (void*)a, (void*)s);
+}
+
+int
+sys_join(void)
+{
+  void **p;
+  if(argptr(0,(void*)&p,sizeof(p)) < 0) return -1;
+  return join(p);
+}
+
+int
+sys_threadexit(void)
+{
+  threadexit();
+  return 0;
+}
+
+
 int sys_getsysteminfo(void)
 {
 char *ubuf;

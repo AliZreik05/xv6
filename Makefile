@@ -183,6 +183,7 @@ UPROGS=\
 	_zombie\
 _getsysteminfo\
 _login\
+_testthreads\
 
 fs.img: mkfs README $(UPROGS)
 	./mkfs fs.img README $(UPROGS)
