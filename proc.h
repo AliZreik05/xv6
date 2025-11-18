@@ -60,6 +60,11 @@ void *userstack;
 int nbofactivethreads;
 int szpriv;
 int *szp;
+
+int queueNumber;
+int q0ticks;
+int waiting_time;
+int arrival_time;
 };
 
 // Process memory is laid out contiguously, low addresses first:

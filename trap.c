@@ -54,7 +54,30 @@ trap(struct trapframe *tf)
       wakeup(&ticks);
       release(&tickslock);
     }
-    lapiceoi();
+struct proc *p = myproc();
+if(p && p->state == RUNNING)
+{
+int need_preempt =0;
+if(p->queueNumber == 0)
+{
+p->q0ticks++;
+if(p->q0ticks >= Q0_QUANTUM)
+{
+//cprintf("Demoted process: %d, to Q1 at ticks=%d\n",p->pid,ticks);		//for testing purposes
+p->q0ticks=0;
+p->queueNumber=1;
+p->waiting_time=0;
+p->arrival_time=ticks;
+need_preempt =1;
+}
+}else
+{
+need_preempt =1;
+}
+if(need_preempt)
+yield();
+}
+lapiceoi();
     break;
   case T_IRQ0 + IRQ_IDE:
     ideintr();
@@ -102,9 +125,9 @@ trap(struct trapframe *tf)
 
   // Force process to give up CPU on clock tick.
   // If interrupts were on while locks held, would need to check nlock.
-  if(myproc() && myproc()->state == RUNNING &&
-     tf->trapno == T_IRQ0+IRQ_TIMER)
-    yield();
+  //if(myproc() && myproc()->state == RUNNING &&
+     //tf->trapno == T_IRQ0+IRQ_TIMER)
+    //yield();
 
   // Check if the process has been killed since we yielded
   if(myproc() && myproc()->killed && (tf->cs&3) == DPL_USER)

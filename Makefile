@@ -182,8 +182,11 @@ UPROGS=\
 	_wc\
 	_zombie\
 _getsysteminfo\
+_testLauncher\
 _login\
+_spammer\
 _testthreads\
+_testPhase3\
 _tree \
 _diff \
 

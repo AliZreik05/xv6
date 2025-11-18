@@ -19,6 +19,7 @@ struct {
 
 static struct proc *initproc;
 
+extern uint ticks;
 int nextpid = 1;
 extern void forkret(void);
 extern void trapret(void);
@@ -125,6 +126,10 @@ p->nbofactivethreads=1;
 p->szpriv=0;
 p->szp = &p->szpriv;
 
+p->queueNumber=0;
+p->q0ticks = 0;
+p->waiting_time=0;
+p->arrival_time =0;
   return p;
 }
 
@@ -255,6 +260,11 @@ p->szp = &p->szpriv;
 p->leader = p;
 p->threadgroupleaderid = p->pid;
 p->isathread=0;
+
+initproc->queueNumber=0;
+initproc->q0ticks =0;
+initproc->waiting_time= 0;
+initproc->arrival_time =0;
   memset(p->tf, 0, sizeof(*p->tf));
   p->tf->cs = (SEG_UCODE << 3) | DPL_USER;
   p->tf->ds = (SEG_UDATA << 3) | DPL_USER;
@@ -323,11 +333,18 @@ fork(void)
     return -1;
   }
   np->sz = curproc->sz;
+np->szpriv = np->sz;
+
   np->parent = curproc;
 np->leader=np;
 np->threadgroupleaderid = np->pid;
 np->isathread =0;
   *np->tf = *curproc->tf;
+
+np->queueNumber = 0;
+np->q0ticks = 0;
+np->waiting_time =0;
+np->arrival_time=0;
 
   // Clear %eax so that fork returns 0 in the child.
   np->tf->eax = 0;
@@ -455,39 +472,84 @@ continue;
 void
 scheduler(void)
 {
-  struct proc *p;
-  struct cpu *c = mycpu();
-  c->proc = 0;
-  
-  for(;;){
-    // Enable interrupts on this processor.
-    sti();
+struct cpu *c = mycpu();
+c->proc=0;
+static int last_q0_index =-1;
+static int last_q1_index = -1;
 
-    // Loop over process table looking for process to run.
-    acquire(&ptable.lock);
-    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-      if(p->state != RUNNABLE)
-        continue;
+for(;;)
+{
+sti();
+acquire(&ptable.lock);
 
-      // Switch to chosen process.  It is the process's job
-      // to release ptable.lock and then reacquire it
-      // before jumping back to us.
-      c->proc = p;
-      switchuvm(p);
-      p->state = RUNNING;
+struct proc *p;
+struct proc *chosen =0;
 
-      swtch(&(c->scheduler), p->context);
-      switchkvm();
+for(p = ptable.proc; p<&ptable.proc[NPROC];p++)
+{
+if(p->state == RUNNABLE && p->queueNumber == 1)
+{
+p->waiting_time++;
+if(p->waiting_time >= MAX_PROCESS_AGE)
+{
+p->queueNumber = 0;
+p->waiting_time=0;
+p->q0ticks=0;
+//cprintf("Promote process: %d to Q0 due to aging\n",p->pid);          Commented because this is used for testing purposes
+}									//if TA wants to test, they can uncomment this in addition
+}									//to things commented under
 
-      // Process is done running for now.
-      // It should have changed its p->state before coming back.
-      c->proc = 0;
-    }
-    release(&ptable.lock);
-
-  }
 }
 
+int i, index;
+for(i=0; i<NPROC;i++)
+{
+index = (last_q0_index +1+i)%NPROC;
+p=&ptable.proc[index];
+if(p->state == RUNNABLE && p->queueNumber ==0)
+{
+chosen = p;
+last_q0_index= index;
+break;
+}
+}
+if(chosen == 0)
+{
+for(i = 0 ;i< NPROC;i++)
+{
+index = (last_q1_index + 1 + i)%NPROC;
+p= &ptable.proc[index];
+
+if(p->state == RUNNABLE && p->queueNumber == 1)
+{
+chosen = p;
+last_q1_index = index;
+break;
+} 
+}
+}
+
+if(chosen !=0)
+{
+p=chosen;
+
+//if(p->queueNumber ==0 )                                           this code is used for testing purposes, incase the TAs 
+//{cprintf("Running process: %d in Q0\n",p->pid);}		want to test this code, they can uncomment this section and observe
+//else								the code working
+//{cprintf("Running process: %d in Q1\n",p->pid);}
+
+p->waiting_time =0;
+c->proc = p;
+switchuvm(p);
+p->state = RUNNING;
+swtch(&c->scheduler,p->context);
+switchkvm();
+c->proc =0;
+}
+release(&ptable.lock);
+}//outer for
+
+}//function
 // Enter scheduler.  Must hold only ptable.lock
 // and have changed proc->state. Saves and restores
 // intena because intena is a property of this
@@ -571,7 +633,7 @@ sleep(void *chan, struct spinlock *lk)
   // Go to sleep.
   p->chan = chan;
   p->state = SLEEPING;
-
+ p->waiting_time=0;
   sched();
 
   // Tidy up.
@@ -592,9 +654,15 @@ wakeup1(void *chan)
 {
   struct proc *p;
 
-  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
-    if(p->state == SLEEPING && p->chan == chan)
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if(p->state == SLEEPING && p->chan == chan){
       p->state = RUNNABLE;
+if(p->queueNumber == 1)
+{
+p->arrival_time = ticks;
+}
+}
+}
 }
 
 // Wake up all processes sleeping on chan.
