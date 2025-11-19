@@ -168,7 +168,6 @@ mkfs: mkfs.c fs.h
 UPROGS=\
 	_cat\
 	_echo\
-	_forktest\
 	_grep\
 	_init\
 	_kill\
@@ -189,9 +188,15 @@ _testthreads\
 _testPhase3\
 _tree \
 _diff \
+_search \
+_find \
+_split \
+
 
 fs.img: mkfs README $(UPROGS)
-	./mkfs fs.img README $(UPROGS)
+	@echo "Creating fs.img..."
+	-./mkfs fs.img README $(UPROGS)
+
 
 -include *.d
 
